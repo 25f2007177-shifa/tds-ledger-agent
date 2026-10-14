@@ -337,6 +337,23 @@ def answer_question(question, orders, rates):
         average = total / Decimal(len(paid_orders))
         return float(money(average))
 
+        # Find the top-selling product by revenue.
+    if (
+        "product" in q
+        and any(word in q for word in ("revenue", "sales", "turnover", "earned"))
+        and any(word in q for word in ("top", "most", "highest", "best"))
+    ):
+        product_revenue = defaultdict(lambda: Decimal("0"))
+
+        for order in selected:
+            if order.get("status") == "paid":
+                name = order.get("product")
+                if name:
+                    product_revenue[name] += amount_usd(order, rates)
+
+        if product_revenue:
+            return max(product_revenue, key=product_revenue.get)
+    
     # Revenue/sales totals: paid orders only.
     if any(word in q for word in ("revenue", "sales", "turnover", "earned")):
         paid_orders = [
