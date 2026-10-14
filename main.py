@@ -1,4 +1,3 @@
-```python
 import json
 import os
 import re
@@ -457,4 +456,4 @@ def answer_endpoint(request: QuestionRequest):
             status_code=502,
             detail="Could not retrieve or process ledger data.",
         )
-```
+
