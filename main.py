@@ -299,7 +299,9 @@ def answer_question(question, orders, rates):
         "paid" in q
         or any(
             word in q
-            for word in ("revenue", "sales", "turnover", "earned")
+            for word in (
+                "revenue", "sales", "turnover", "earned"
+            )
         )
     )
 
@@ -355,7 +357,10 @@ def answer_question(question, orders, rates):
             return max(product_revenue, key=product_revenue.get)
     
     # Revenue/sales totals: paid orders only.
-    if any(word in q for word in ("revenue", "sales", "turnover", "earned")):
+    if any(
+        word in q
+        for word in ("revenue", "sales", "turnover", "earned")
+    ):
         paid_orders = [
             order for order in selected
             if order.get("status") == "paid"
@@ -365,7 +370,6 @@ def answer_question(question, orders, rates):
             (amount_usd(order, rates) for order in paid_orders),
             Decimal("0"),
         )
-
         return float(money(total))
 
     # Refund totals or refund counts.
