@@ -1,4 +1,4 @@
-
+import json
 import os
 import re
 import requests
@@ -67,35 +67,64 @@ def load_ledger():
     root = fetch_json(root_url)
     links = root.get("links", {})
 
-    if "orders" not in links or "rates" not in links:
+    if "rates" not in links or "orders" not in links:
         raise RuntimeError("Missing orders or rates API link")
 
-    orders_url = links["orders"]
-    first_page = fetch_json(orders_url)
-    page_count = int(first_page.get("pages", 1))
+    rates = fetch_json(links["rates"]).get("usd_per_unit", {})
+    rows = None
 
-    # Fetch pages concurrently using the API's page parameter.
-    urls = [
-        page_url(orders_url, number)
-        for number in range(2, page_count + 1)
-    ]
+    # Prefer the export endpoint if it returns a usable response.
+    if links.get("export"):
+        try:
+            response = requests.get(links["export"], timeout=8)
+            response.raise_for_status()
 
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        other_pages = list(pool.map(fetch_json, urls))
+            try:
+                payload = response.json()
+                if isinstance(payload, list):
+                    rows = payload
+                elif isinstance(payload, dict):
+                    rows = payload.get("orders", payload.get("data"))
+                    if isinstance(rows, dict):
+                        rows = rows.get("orders")
+            except ValueError:
+                # Also support newline-delimited JSON exports.
+                rows = [
+                    json.loads(line)
+                    for line in response.text.splitlines()
+                    if line.strip()
+                ]
 
-    rows = list(first_page.get("orders", []))
-    for page in other_pages:
-        rows.extend(page.get("orders", []))
+            if not isinstance(rows, list) or not rows:
+                rows = None
+        except Exception:
+            rows = None
 
-    # Keep the latest revision of every order ID.
+    # Fall back to fetching pages concurrently.
+    if rows is None:
+        orders_url = links["orders"]
+        first_page = fetch_json(orders_url)
+        page_count = int(first_page.get("pages", 1))
+
+        urls = [
+            page_url(orders_url, n)
+            for n in range(2, page_count + 1)
+        ]
+
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            pages = list(pool.map(fetch_json, urls))
+
+        rows = list(first_page.get("orders", []))
+        for page in pages:
+            rows.extend(page.get("orders", []))
+
+    # Keep only the latest revision of each order ID.
     current = {}
     for row in rows:
         order_id = row.get("id")
-        if order_id is None:
-            continue
-
         updated = parse_date(row.get("updated_at"))
-        if updated is None:
+
+        if order_id is None or updated is None:
             continue
 
         if (
@@ -104,10 +133,7 @@ def load_ledger():
         ):
             current[order_id] = (updated, row)
 
-    orders = [item[1] for item in current.values()]
-    rates = fetch_json(links["rates"]).get("usd_per_unit", {})
-
-    return orders, rates
+    return [item[1] for item in current.values()], rates
 
 
 def parse_date(value):
